@@ -6,10 +6,13 @@ import { ArticleTile } from "@/components/article-tile"
 import { useNewsStore } from "@/store/newsStore"
 import { useNewsGeneration } from "@/hooks/useNewsGeneration"
 import { API_CONFIG } from "@/config/api"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { AlertCircle } from "lucide-react"
 
 export default function Home() {
   const [selectedSection, setSelectedSection] = useState(API_CONFIG.DEFAULT_SECTIONS[0])
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   
   const {
     articles,
@@ -29,10 +32,11 @@ export default function Home() {
   useEffect(() => {
     const loadArticles = async () => {
       setIsLoading(true)
+      setError(null)
       try {
         await generateArticle(selectedSection)
-      } catch (error) {
-        console.error('Error loading articles:', error)
+      } catch (error: any) {
+        setError(error?.message || 'Failed to load articles. Please check your API configuration.')
       } finally {
         setIsLoading(false)
       }
@@ -40,27 +44,6 @@ export default function Home() {
 
     loadArticles()
   }, [selectedSection])
-
-  // Load trending topics periodically
-  useEffect(() => {
-    const loadTrendingTopics = async () => {
-      try {
-        const topics = await generateTrendingTopics()
-        topics.forEach(topic => {
-          if (!customTopics.includes(topic) && !sections.includes(topic)) {
-            addCustomTopic(topic)
-          }
-        })
-      } catch (error) {
-        console.error('Error loading trending topics:', error)
-      }
-    }
-
-    loadTrendingTopics()
-    const interval = setInterval(loadTrendingTopics, 1000 * 60 * 30) // Every 30 minutes
-
-    return () => clearInterval(interval)
-  }, [])
 
   const filteredArticles = articles.filter(
     article => article.section === selectedSection
@@ -72,12 +55,18 @@ export default function Home() {
     <div className="min-h-screen bg-background">
       <SiteHeader />
       <main className="container py-6">
-        {isLoading ? (
+        {error ? (
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : isLoading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 [&>*]:border-black [&>*]:border-[1px] [&>*:nth-child(n+4)]:border-t-0 [&>*:nth-child(3n+2)]:border-x-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredArticles.map((article, index) => (
               <ArticleTile
                 key={article.id}

@@ -1,5 +1,5 @@
 export const API_CONFIG = {
-  PERPLEXITY_API_KEY: process.env.NEXT_PUBLIC_PERPLEXITY_API_KEY || '',
+  PERPLEXITY_API_KEY: process.env.PERPLEXITY_API_KEY || '',
   CACHE_DURATION: 1000 * 60 * 5, // 5 minutes
   DEFAULT_SECTIONS: ['News', 'Politics', 'Economy', 'Sports', 'Technology'],
   MAX_ARTICLES_PER_PAGE: 12,

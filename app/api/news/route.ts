@@ -1,68 +1,101 @@
-import { StreamingTextResponse, LangChainStream, Message } from 'ai';
-import { experimental_StreamingReactResponse } from 'ai/react';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
+import { generateObject, Message } from "ai";
+import { articleSchema, headlineSchema, trendingSchema } from "@/lib/schema";
 
-const PERPLEXITY_API_URL = 'https://api.perplexity.ai/chat/completions';
+const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
+
+// Custom provider for Perplexity AI
+const perplexity = {
+  id: "perplexity",
+  generateText: async ({ messages }: { messages: Message[] }) => {
+    const response = await fetch(PERPLEXITY_API_URL, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.PERPLEXITY_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "mixtral-8x7b-instruct",
+        messages,
+        temperature: 0.2,
+        max_tokens: 1000,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Failed to generate content");
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  },
+};
+
+const systemMessages: Record<string, string> = {
+  article:
+    "You are an AI news article generator. Create a detailed, factual article.",
+  headline:
+    "You are a headline generator. Create a concise, engaging headline.",
+  trending:
+    "Generate a list of current trending news topics with descriptions.",
+};
 
 export async function POST(req: NextRequest) {
-  const { messages, type = 'article' } = await req.json();
+  try {
+    const body = await req.json();
 
-  const systemMessages: Record<string, string> = {
-    article: "You are an AI news article generator. Create detailed, factual articles with citations. Format: [CONTENT] followed by [KEYWORDS] as a comma-separated list.",
-    headline: "You are a headline generator for a news website. Create compelling, concise headlines.",
-    trending: "Generate a list of current trending news topics. Format the response as a numbered list."
-  };
-
-  const { stream, handlers } = LangChainStream();
-
-  const response = fetch(PERPLEXITY_API_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.PERPLEXITY_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: "llama-3.1-sonar-small-128k-online",
-      messages: [
-        { role: 'system', content: systemMessages[type] },
-        ...messages
-      ],
-      temperature: 0.2,
-      top_p: 0.9,
-      stream: true,
-      search_recency_filter: type === 'trending' ? 'day' : 'week'
-    }),
-  }).then(async (response) => {
-    if (!response.ok) {
-      throw new Error(await response.text());
+    if (!body.messages || !Array.isArray(body.messages)) {
+      return NextResponse.json(
+        { error: "Invalid request: messages array is required" },
+        { status: 400 }
+      );
     }
 
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
+    const { messages, type = "article" } = body;
 
-    if (!reader) {
-      throw new Error('No reader available');
+    if (!["article", "headline", "trending"].includes(type)) {
+      return NextResponse.json(
+        { error: "Invalid type: must be 'article', 'headline', or 'trending'" },
+        { status: 400 }
+      );
     }
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = JSON.parse(line.slice(6));
-          handlers.onToken(data.choices[0].delta.content || '');
-        }
-      }
+    if (!process.env.PERPLEXITY_API_KEY) {
+      return NextResponse.json(
+        {
+          error:
+            "Perplexity API key is not configured. Please add PERPLEXITY_API_KEY to your .env.local file.",
+        },
+        { status: 401 }
+      );
     }
 
-    handlers.onComplete();
-  });
+    // Select the appropriate schema based on type
+    const schemaMap = {
+      article: articleSchema,
+      headline: headlineSchema,
+      trending: trendingSchema,
+    };
+    const schema = schemaMap[type as keyof typeof schemaMap];
 
-  return new StreamingTextResponse(stream);
+    const { object } = await generateObject({
+      model: perplexity,
+      schema,
+      schemaName: type.charAt(0).toUpperCase() + type.slice(1),
+      schemaDescription: `A ${type} generation request`,
+      mode: "json",
+      prompt: messages[messages.length - 1].content,
+      systemPrompt: systemMessages[type],
+    });
+
+    return NextResponse.json(object);
+  } catch (error: any) {
+    console.error("API Error:", error);
+    return NextResponse.json(
+      { error: error.message || "Internal server error" },
+      { status: 500 }
+    );
+  }
 }
