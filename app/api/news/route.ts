@@ -1,45 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateObject, Message } from "ai";
-import { articleSchema, headlineSchema, trendingSchema } from "@/lib/schema";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { generateText } from "ai";
 
-const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
-
-// Custom provider for Perplexity AI
-const perplexity = {
-  id: "perplexity",
-  generateText: async ({ messages }: { messages: Message[] }) => {
-    const response = await fetch(PERPLEXITY_API_URL, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.PERPLEXITY_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "mixtral-8x7b-instruct",
-        messages,
-        temperature: 0.2,
-        max_tokens: 1000,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || "Failed to generate content");
-    }
-
-    const data = await response.json();
-    return data.choices[0].message.content;
+const perplexity = createOpenAICompatible({
+  name: "perplexity",
+  baseURL: "https://api.perplexity.ai",
+  headers: {
+    Authorization: `Bearer ${process.env.PERPLEXITY_API_KEY}`,
   },
-};
+});
 
 const systemMessages: Record<string, string> = {
+  headlines:
+    "You are an experienced news editor at a major publication. Generate 5 current and engaging news headlines for the specified section. Format each as a numbered list. Make the headlines catchy but informative, similar to what you'd see in quality news publications.",
   article:
-    "You are an AI news article generator. Create a detailed, factual article.",
-  headline:
-    "You are a headline generator. Create a concise, engaging headline.",
-  trending:
-    "Generate a list of current trending news topics with descriptions.",
+    "You are a professional journalist writing for a major news publication. Write a comprehensive, well-researched article that maintains journalistic integrity and objectivity. Include relevant details, quotes if applicable, and maintain a professional tone throughout.",
+  keywords:
+    "You are a content strategist. Analyze the provided article and extract 5-7 relevant keywords or key phrases that best represent its main topics and themes. Format as a comma-separated list.",
 };
 
 export async function POST(req: NextRequest) {
@@ -55,9 +32,9 @@ export async function POST(req: NextRequest) {
 
     const { messages, type = "article" } = body;
 
-    if (!["article", "headline", "trending"].includes(type)) {
+    if (!["headlines", "article", "keywords"].includes(type)) {
       return NextResponse.json(
-        { error: "Invalid type: must be 'article', 'headline', or 'trending'" },
+        { error: "Invalid type: must be 'headlines', 'article', or 'keywords'" },
         { status: 400 }
       );
     }
@@ -72,25 +49,36 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Select the appropriate schema based on type
-    const schemaMap = {
-      article: articleSchema,
-      headline: headlineSchema,
-      trending: trendingSchema,
-    };
-    const schema = schemaMap[type as keyof typeof schemaMap];
-
-    const { object } = await generateObject({
-      model: perplexity,
-      schema,
-      schemaName: type.charAt(0).toUpperCase() + type.slice(1),
-      schemaDescription: `A ${type} generation request`,
-      mode: "json",
-      prompt: messages[messages.length - 1].content,
-      systemPrompt: systemMessages[type],
+    const { text } = await generateText({
+      model: perplexity.chatModel("llama-3.1-sonar-large-128k-online"),
+      messages: [
+        { role: "system", content: systemMessages[type] },
+        ...messages,
+      ],
     });
 
-    return NextResponse.json(object);
+    if (type === "headlines") {
+      // Parse the numbered list into an array of headlines
+      const headlines = text
+        .split("\n")
+        .filter(line => /^\d+\./.test(line))
+        .map(line => line.replace(/^\d+\.\s*/, "").trim());
+
+      return NextResponse.json({ headlines });
+    }
+
+    if (type === "keywords") {
+      // Parse the comma-separated list into an array of keywords
+      const keywords = text
+        .split(",")
+        .map(keyword => keyword.trim())
+        .filter(Boolean);
+
+      return NextResponse.json({ keywords });
+    }
+
+    // For article, return the raw text
+    return NextResponse.json({ text });
   } catch (error: any) {
     console.error("API Error:", error);
     return NextResponse.json(

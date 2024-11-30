@@ -1,56 +1,65 @@
 import { useState } from "react";
 import { Article, useNewsStore } from "@/store/newsStore";
 import { Cache } from "@/utils/cache";
-import { JSONParseError, TypeValidationError } from "ai";
-import { z } from "zod";
 
-interface GenerationError {
-  type: "parse-error" | "validation-error" | "unknown-error";
-  message: string;
+interface HeadlinesResponse {
+  headlines: string[];
+}
+
+interface ArticleResponse {
+  text: string;
+}
+
+interface KeywordsResponse {
+  keywords: string[];
 }
 
 const generateContent = async <T>(type: string, messages: Array<{ role: string; content: string }>) => {
-  try {
-    const response = await fetch("/api/news", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messages,
-        type,
-      }),
-    });
+  const response = await fetch("/api/news", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messages,
+      type,
+    }),
+  });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || "Failed to generate content");
-    }
-
-    return response.json() as Promise<T>;
-  } catch (error) {
-    if (JSONParseError.isJSONParseError(error)) {
-      throw { type: "parse-error", message: `Invalid JSON response: ${error.text}` };
-    } else if (TypeValidationError.isTypeValidationError(error)) {
-      throw { type: "validation-error", message: `Invalid data structure: ${JSON.stringify(error.value)}` };
-    } else {
-      throw { type: "unknown-error", message: error instanceof Error ? error.message : "An unknown error occurred" };
-    }
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error || "Failed to generate content");
   }
+
+  return response.json() as Promise<T>;
 };
 
 export function useNewsGeneration() {
   const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState<GenerationError | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const { addArticle } = useNewsStore();
 
-  const generateArticle = async (topic: string) => {
+  const generateHeadlines = async (section: string) => {
+    setError(null);
+    try {
+      const response = await generateContent<HeadlinesResponse>("headlines", [
+        { role: "user", content: `Generate current news headlines for the ${section} section` },
+      ]);
+      return response.headlines;
+    } catch (error: any) {
+      console.error("Error generating headlines:", error);
+      setError(error.message || "Failed to generate headlines");
+      throw error;
+    }
+  };
+
+  const generateArticle = async (headline: string, section: string) => {
     setIsGenerating(true);
     setError(null);
 
     try {
       // Check cache first
-      const cacheKey = `article-${topic}`;
+      const cacheKey = `article-${headline}`;
       const cachedArticle: Article | null = Cache.get(cacheKey);
 
       if (cachedArticle) {
@@ -58,23 +67,23 @@ export function useNewsGeneration() {
         return cachedArticle;
       }
 
-      // Generate headline first
-      const headlineResponse = await generateContent<{ headline: string }>("headline", [
-        { role: "user", content: `Generate a headline about: ${topic}` },
+      // Generate the full article
+      const articleResponse = await generateContent<ArticleResponse>("article", [
+        { role: "user", content: `Write a comprehensive news article for the headline: ${headline}` },
       ]);
 
-      // Generate full article
-      const articleResponse = await generateContent<{ content: string; keywords: string[] }>("article", [
-        { role: "user", content: `Write a comprehensive news article for the headline: ${headlineResponse.headline}` },
+      // Generate keywords from the article
+      const keywordsResponse = await generateContent<KeywordsResponse>("keywords", [
+        { role: "user", content: `Extract keywords from this article: ${articleResponse.text}` },
       ]);
 
       const article = {
         id: Date.now().toString(),
-        headline: headlineResponse.headline.trim(),
-        content: articleResponse.content.trim(),
-        summary: articleResponse.content.split(".").slice(0, 2).join(".") + ".",
-        keywords: articleResponse.keywords,
-        section: topic,
+        headline: headline.trim(),
+        content: articleResponse.text.trim(),
+        summary: articleResponse.text.split(".").slice(0, 2).join(".").trim() + ".",
+        keywords: keywordsResponse.keywords,
+        section,
         publishedAt: new Date().toISOString(),
         sources: [],
         citations: [],
@@ -86,9 +95,9 @@ export function useNewsGeneration() {
       addArticle(article);
 
       return article;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error generating article:", error);
-      setError(error as GenerationError);
+      setError(error.message || "Failed to generate article");
       throw error;
     } finally {
       setIsGenerating(false);
@@ -98,18 +107,22 @@ export function useNewsGeneration() {
   const generateTrendingTopics = async () => {
     setError(null);
     try {
-      const response = await generateContent<{
-        topics: Array<{ title: string; description: string }>;
-      }>("trending", [{ role: "user", content: "Generate trending news topics" }]);
-      return response.topics;
-    } catch (error) {
+      const response = await generateContent<HeadlinesResponse>("headlines", [
+        { role: "user", content: "Generate current trending news headlines across all sections" },
+      ]);
+      return response.headlines.map(headline => ({
+        title: headline,
+        description: "", // We could generate descriptions if needed
+      }));
+    } catch (error: any) {
       console.error("Error generating trending topics:", error);
-      setError(error as GenerationError);
+      setError(error.message || "Failed to generate trending topics");
       throw error;
     }
   };
 
   return {
+    generateHeadlines,
     generateArticle,
     generateTrendingTopics,
     isGenerating,
