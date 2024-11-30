@@ -13,8 +13,7 @@ import { Article } from "@/store/newsStore"
 interface ArticleTileProps {
   article: Article
   onSave?: (article: Article) => void
-  onKeywordAdd?: (keyword: string) => void
-  onKeywordRemove?: (keyword: string) => void
+  onRemove?: () => void
   saved?: boolean
   index: number
 }
@@ -22,27 +21,14 @@ interface ArticleTileProps {
 export function ArticleTile({
   article,
   onSave,
-  onKeywordAdd,
-  onKeywordRemove,
+  onRemove,
   saved = false,
   index
 }: ArticleTileProps) {
   const [isExpanded, setIsExpanded] = useState(false)
-  const [newKeyword, setNewKeyword] = useState("")
 
-  const addKeyword = () => {
-    if (newKeyword.trim() && onKeywordAdd) {
-      onKeywordAdd(newKeyword.trim())
-      setNewKeyword("")
-    }
-  }
-
-  const removeKeyword = (keyword: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (onKeywordRemove) {
-      onKeywordRemove(keyword)
-    }
-  }
+  // Generate a summary from the content if not provided
+  const summary = article.summary || article.content?.split('.').slice(0, 2).join('.') + '.'
 
   return (
     <motion.div
@@ -83,7 +69,7 @@ export function ArticleTile({
           layout="position"
           className="text-sm text-muted-foreground line-clamp-3"
         >
-          {article.summary}
+          {summary}
         </motion.p>
         <AnimatePresence>
           {isExpanded && (
@@ -93,7 +79,7 @@ export function ArticleTile({
               exit={{ opacity: 0 }}
               className="mt-4 space-y-4"
             >
-              <div className="prose prose-sm dark:prose-invert">
+              <div className="prose prose-sm dark:prose-invert whitespace-pre-wrap">
                 {article.content}
               </div>
               <div className="space-y-2">
@@ -102,109 +88,40 @@ export function ArticleTile({
                   <span className="text-sm font-medium">Keywords</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {article.keywords.map((keyword) => (
-                    <Badge 
-                      key={keyword} 
-                      variant="secondary" 
-                      className="border-black group/badge"
-                    >
+                  {article.keywords?.map((keyword, i) => (
+                    <Badge key={i} variant="outline">
                       {keyword}
-                      {onKeywordRemove && (
-                        <button
-                          onClick={(e) => removeKeyword(keyword, e)}
-                          className="ml-1 hidden group-hover/badge:inline-block"
-                        >
-                          ×
-                        </button>
-                      )}
                     </Badge>
                   ))}
                 </div>
-                {onKeywordAdd && (
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Add keyword"
-                      value={newKeyword}
-                      onChange={(e) => setNewKeyword(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && addKeyword()}
-                      className="border-black focus-visible:ring-0 focus-visible:ring-offset-0"
-                    />
-                    <Button 
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        addKeyword()
-                      }}
-                      className="border-black"
-                    >
-                      Add
-                    </Button>
-                  </div>
-                )}
               </div>
-              {article.sources.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium">Sources</h4>
-                  <ul className="list-disc pl-4 text-sm text-muted-foreground">
-                    {article.sources.map((source, index) => (
-                      <li key={index}>
-                        <a 
-                          href={source} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="hover:underline"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {source}
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
+              <div className="flex justify-between items-center pt-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  {new Date(article.publishedAt).toLocaleDateString()}
                 </div>
-              )}
-              {onSave && (
                 <Button
+                  size="sm"
+                  variant="ghost"
                   onClick={(e) => {
                     e.stopPropagation()
-                    onSave(article)
+                    if (saved && onRemove) {
+                      onRemove()
+                    } else if (onSave) {
+                      onSave(article)
+                    }
                   }}
-                  className="border-black"
-                  variant={saved ? "secondary" : "default"}
                 >
                   {saved ? (
-                    <>
-                      <BookmarkCheck className="mr-2 h-4 w-4" />
-                      Saved
-                    </>
+                    <BookmarkCheck className="h-4 w-4" />
                   ) : (
-                    <>
-                      <Bookmark className="mr-2 h-4 w-4" />
-                      Save Article
-                    </>
+                    <Bookmark className="h-4 w-4" />
                   )}
                 </Button>
-              )}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
-        <motion.div
-          layout="position"
-          className="absolute bottom-2 left-4 right-4"
-        >
-          <div className="flex flex-wrap gap-2">
-            {article.keywords.slice(0, 3).map((keyword) => (
-              <Badge key={keyword} variant="secondary" className="border-black">
-                {keyword}
-              </Badge>
-            ))}
-            {article.keywords.length > 3 && (
-              <Badge variant="outline" className="border-black">
-                +{article.keywords.length - 3}
-              </Badge>
-            )}
-          </div>
-        </motion.div>
       </motion.div>
-      <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
     </motion.div>
   )
 }

@@ -4,14 +4,17 @@ import { Cache } from "@/utils/cache";
 
 interface HeadlinesResponse {
   headlines: string[];
+  error?: string;
 }
 
 interface ArticleResponse {
   text: string;
+  error?: string;
 }
 
 interface KeywordsResponse {
   keywords: string[];
+  error?: string;
 }
 
 const generateContent = async <T>(
@@ -31,12 +34,17 @@ const generateContent = async <T>(
     signal,
   });
 
+  const data = await response.json();
+
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error || "Failed to generate content");
+    throw new Error(data.error || `Failed to generate content (${response.status})`);
   }
 
-  return response.json() as Promise<T>;
+  if (data.error) {
+    throw new Error(data.error);
+  }
+
+  return data as T;
 };
 
 export function useNewsGeneration() {
@@ -50,6 +58,7 @@ export function useNewsGeneration() {
       abortController.abort();
       setAbortController(null);
       setIsGenerating(false);
+      setError(null);
     }
   };
 
@@ -91,8 +100,9 @@ export function useNewsGeneration() {
       if (error.name === 'AbortError') {
         return []; // Return empty array if aborted
       }
-      console.error("Error generating headlines:", error);
-      setError(error.message || "Failed to generate headlines");
+      const errorMessage = error.message || "Failed to generate headlines";
+      console.error("Error generating headlines:", errorMessage);
+      setError(errorMessage);
       throw error;
     }
   };
@@ -140,8 +150,6 @@ export function useNewsGeneration() {
         keywords: keywordsResponse.keywords,
         section,
         publishedAt: new Date().toISOString(),
-        sources: [],
-        citations: [],
         timestamp: Date.now(),
       };
 
@@ -155,33 +163,18 @@ export function useNewsGeneration() {
       if (error.name === 'AbortError') {
         return null; // Return null if aborted
       }
-      console.error("Error generating article:", error);
-      setError(error.message || "Failed to generate article");
+      const errorMessage = error.message || "Failed to generate article";
+      console.error("Error generating article:", errorMessage);
+      setError(errorMessage);
       throw error;
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const generateTrendingTopics = async () => {
-    setError(null);
-    try {
-      const headlines = await generateHeadlines("Breaking News", 5);
-      return headlines.map(headline => ({
-        title: headline,
-        description: "", // We could generate descriptions if needed
-      }));
-    } catch (error: any) {
-      console.error("Error generating trending topics:", error);
-      setError(error.message || "Failed to generate trending topics");
-      throw error;
-    }
-  };
-
   return {
     generateHeadlines,
     generateArticle,
-    generateTrendingTopics,
     isGenerating,
     error,
     cancelGeneration,
