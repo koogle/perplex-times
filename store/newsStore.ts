@@ -1,5 +1,5 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 export interface Article {
   id: string;
@@ -7,85 +7,60 @@ export interface Article {
   content: string;
   summary: string;
   keywords: string[];
+  section: string;
+  publishedAt: string;
   sources: string[];
   citations: string[];
-  section: string;
   timestamp: number;
 }
 
-interface NewsState {
+interface NewsStore {
   articles: Article[];
   savedArticles: Article[];
-  sections: string[];
-  customTopics: string[];
-  userKeywords: string[];
+  selectedSection: string;
   addArticle: (article: Article) => void;
-  saveArticle: (article: Article) => void;
   removeArticle: (id: string) => void;
-  addSection: (section: string) => void;
-  removeSection: (section: string) => void;
-  addCustomTopic: (topic: string) => void;
-  removeCustomTopic: (topic: string) => void;
-  addUserKeyword: (keyword: string) => void;
-  removeUserKeyword: (keyword: string) => void;
+  saveArticle: (article: Article) => void;
+  unsaveArticle: (id: string) => void;
+  setSelectedSection: (section: string) => void;
 }
 
-export const useNewsStore = create<NewsState>()(
+export const useNewsStore = create<NewsStore>()(
   persist(
     (set) => ({
       articles: [],
       savedArticles: [],
-      sections: ['News', 'Politics', 'Economy', 'Sports', 'Technology'],
-      customTopics: [],
-      userKeywords: [],
-
+      selectedSection: "Breaking News",
       addArticle: (article) =>
         set((state) => ({
-          articles: [article, ...state.articles]
+          articles: [article, ...state.articles.filter((a) => a.id !== article.id)],
         })),
-
-      saveArticle: (article) =>
-        set((state) => ({
-          savedArticles: [article, ...state.savedArticles]
-        })),
-
       removeArticle: (id) =>
         set((state) => ({
-          savedArticles: state.savedArticles.filter((article) => article.id !== id)
+          articles: state.articles.filter((article) => article.id !== id),
         })),
-
-      addSection: (section) =>
+      saveArticle: (article) =>
         set((state) => ({
-          sections: [...state.sections, section]
+          savedArticles: [
+            article,
+            ...state.savedArticles.filter((a) => a.id !== article.id),
+          ],
         })),
-
-      removeSection: (section) =>
+      unsaveArticle: (id) =>
         set((state) => ({
-          sections: state.sections.filter((s) => s !== section)
+          savedArticles: state.savedArticles.filter(
+            (article) => article.id !== id
+          ),
         })),
-
-      addCustomTopic: (topic) =>
+      setSelectedSection: (section) =>
         set((state) => ({
-          customTopics: [...state.customTopics, topic]
-        })),
-
-      removeCustomTopic: (topic) =>
-        set((state) => ({
-          customTopics: state.customTopics.filter((t) => t !== topic)
-        })),
-
-      addUserKeyword: (keyword) =>
-        set((state) => ({
-          userKeywords: [...state.userKeywords, keyword]
-        })),
-
-      removeUserKeyword: (keyword) =>
-        set((state) => ({
-          userKeywords: state.userKeywords.filter((k) => k !== keyword)
+          selectedSection: section,
+          // Clear articles when changing sections
+          articles: [],
         })),
     }),
     {
-      name: 'perplex-times-storage',
+      name: "news-store",
     }
   )
 );

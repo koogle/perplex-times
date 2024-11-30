@@ -14,7 +14,11 @@ interface KeywordsResponse {
   keywords: string[];
 }
 
-const generateContent = async <T>(type: string, messages: Array<{ role: string; content: string }>) => {
+const generateContent = async <T>(
+  type: string,
+  messages: Array<{ role: string; content: string }>,
+  signal?: AbortSignal
+): Promise<T> => {
   const response = await fetch("/api/news", {
     method: "POST",
     headers: {
@@ -24,6 +28,7 @@ const generateContent = async <T>(type: string, messages: Array<{ role: string; 
       messages,
       type,
     }),
+    signal,
   });
 
   if (!response.ok) {
@@ -37,16 +42,55 @@ const generateContent = async <T>(type: string, messages: Array<{ role: string; 
 export function useNewsGeneration() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
   const { addArticle } = useNewsStore();
 
-  const generateHeadlines = async (section: string) => {
+  const cancelGeneration = () => {
+    if (abortController) {
+      abortController.abort();
+      setAbortController(null);
+      setIsGenerating(false);
+    }
+  };
+
+  const generateHeadlines = async (section: string, minCount: number = 5) => {
     setError(null);
+    // Cancel any ongoing generation
+    cancelGeneration();
+    
+    // Create new abort controller
+    const controller = new AbortController();
+    setAbortController(controller);
+
     try {
-      const response = await generateContent<HeadlinesResponse>("headlines", [
-        { role: "user", content: `Generate current news headlines for the ${section} section` },
-      ]);
-      return response.headlines;
+      let headlines: string[] = [];
+      let attempts = 0;
+      const maxAttempts = 3;
+
+      while (headlines.length < minCount && attempts < maxAttempts) {
+        const response = await generateContent<HeadlinesResponse>(
+          section === "Breaking News" ? "breaking" : "headlines",
+          [
+            {
+              role: "user",
+              content: section === "Breaking News"
+                ? "Generate the most important news headlines from the last 24 hours"
+                : `Generate current news headlines for the ${section} section`,
+            },
+          ],
+          controller.signal
+        );
+        
+        headlines = [...new Set([...headlines, ...response.headlines])];
+        attempts++;
+      }
+
+      setAbortController(null);
+      return headlines;
     } catch (error: any) {
+      if (error.name === 'AbortError') {
+        return []; // Return empty array if aborted
+      }
       console.error("Error generating headlines:", error);
       setError(error.message || "Failed to generate headlines");
       throw error;
@@ -56,6 +100,13 @@ export function useNewsGeneration() {
   const generateArticle = async (headline: string, section: string) => {
     setIsGenerating(true);
     setError(null);
+    
+    // Cancel any ongoing generation
+    cancelGeneration();
+    
+    // Create new abort controller
+    const controller = new AbortController();
+    setAbortController(controller);
 
     try {
       // Check cache first
@@ -68,14 +119,18 @@ export function useNewsGeneration() {
       }
 
       // Generate the full article
-      const articleResponse = await generateContent<ArticleResponse>("article", [
-        { role: "user", content: `Write a comprehensive news article for the headline: ${headline}` },
-      ]);
+      const articleResponse = await generateContent<ArticleResponse>(
+        "article",
+        [{ role: "user", content: `Write a comprehensive news article for the headline: ${headline}` }],
+        controller.signal
+      );
 
       // Generate keywords from the article
-      const keywordsResponse = await generateContent<KeywordsResponse>("keywords", [
-        { role: "user", content: `Extract keywords from this article: ${articleResponse.text}` },
-      ]);
+      const keywordsResponse = await generateContent<KeywordsResponse>(
+        "keywords",
+        [{ role: "user", content: `Extract keywords from this article: ${articleResponse.text}` }],
+        controller.signal
+      );
 
       const article = {
         id: Date.now().toString(),
@@ -94,8 +149,12 @@ export function useNewsGeneration() {
       Cache.set(cacheKey, article);
       addArticle(article);
 
+      setAbortController(null);
       return article;
     } catch (error: any) {
+      if (error.name === 'AbortError') {
+        return null; // Return null if aborted
+      }
       console.error("Error generating article:", error);
       setError(error.message || "Failed to generate article");
       throw error;
@@ -107,10 +166,8 @@ export function useNewsGeneration() {
   const generateTrendingTopics = async () => {
     setError(null);
     try {
-      const response = await generateContent<HeadlinesResponse>("headlines", [
-        { role: "user", content: "Generate current trending news headlines across all sections" },
-      ]);
-      return response.headlines.map(headline => ({
+      const headlines = await generateHeadlines("Breaking News", 5);
+      return headlines.map(headline => ({
         title: headline,
         description: "", // We could generate descriptions if needed
       }));
@@ -127,5 +184,6 @@ export function useNewsGeneration() {
     generateTrendingTopics,
     isGenerating,
     error,
+    cancelGeneration,
   };
 }
