@@ -19,24 +19,41 @@ const normalizeHeadlines = (headlines: string[]): string[] => {
 
 export async function POST(req: Request) {
   try {
+    // Validate API key
     if (!process.env.PERPLEXITY_API_KEY) {
       return NextResponse.json(
-        { error: "PERPLEXITY_API_KEY is not configured" },
+        { error: "API key not configured. Please set PERPLEXITY_API_KEY environment variable." },
         { status: 500 }
       );
     }
 
+    // Parse and validate request body
     const body = await req.json().catch(() => null);
-    if (!body || !body.messages || !Array.isArray(body.messages) || !body.type) {
+    if (!body) {
       return NextResponse.json(
-        { error: "Invalid request body. Required: messages (array) and type (string)" },
+        { error: "Invalid JSON in request body" },
         { status: 400 }
       );
     }
 
     const { messages, type } = body;
-    let response: string;
 
+    // Validate required fields
+    if (!messages || !Array.isArray(messages)) {
+      return NextResponse.json(
+        { error: "Missing or invalid 'messages' field. Expected an array." },
+        { status: 400 }
+      );
+    }
+
+    if (!type || typeof type !== 'string') {
+      return NextResponse.json(
+        { error: "Missing or invalid 'type' field. Expected a string." },
+        { status: 400 }
+      );
+    }
+
+    // Process request based on type
     try {
       switch (type) {
         case "breaking": {
@@ -44,7 +61,7 @@ export async function POST(req: Request) {
           Format each headline on a new line. Keep headlines concise but informative. Do not include numbers or bullet points.
           Focus on major global events, significant developments, and high-impact stories.`;
           
-          response = await perplexity.completion({
+          const response = await perplexity.completion({
             messages: [{ role: "user", content: prompt }]
           });
 
@@ -56,7 +73,7 @@ export async function POST(req: Request) {
         }
 
         case "headlines": {
-          response = await perplexity.completion({
+          const response = await perplexity.completion({
             messages
           });
 
@@ -68,12 +85,13 @@ export async function POST(req: Request) {
         }
 
         case "article": {
+          const headline = messages[0].content.replace('Write a comprehensive news article for the headline: ', '');
           const prompt = `You are a professional news journalist. Write a comprehensive news article for the following headline. 
           Include relevant details, quotes if applicable, and maintain a neutral, journalistic tone.
           Format the article in clear paragraphs. Keep it concise but informative.
-          Headline: ${messages[0].content.replace('Write a comprehensive news article for the headline: ', '')}`;
+          Headline: ${headline}`;
 
-          response = await perplexity.completion({
+          const response = await perplexity.completion({
             messages: [{ role: "user", content: prompt }]
           });
 
@@ -85,7 +103,7 @@ export async function POST(req: Request) {
           Return only the keywords, one per line:
           ${messages[0].content.replace('Extract keywords from this article: ', '')}`;
 
-          response = await perplexity.completion({
+          const response = await perplexity.completion({
             messages: [{ role: "user", content: prompt }]
           });
 
