@@ -12,22 +12,25 @@ export interface Article {
   timestamp: number;
 }
 
-interface NewsStore {
-  selectedSection: string;
+interface NewsState {
   articles: Article[];
   savedArticles: Article[];
+  selectedSection: string;
+  articleCount: number;
   addArticle: (article: Article) => void;
   saveArticle: (article: Article) => void;
   removeArticle: (id: string) => void;
   setSelectedSection: (section: string) => void;
+  setArticleCount: (count: number) => void;
 }
 
-export const useNewsStore = create<NewsStore>()(
+export const useNewsStore = create<NewsState>()(
   persist(
     (set) => ({
-      selectedSection: "Breaking News",
       articles: [],
       savedArticles: [],
+      selectedSection: "Breaking News",
+      articleCount: 5,
       addArticle: (article) =>
         set((state) => ({
           articles: [article, ...state.articles.filter((a) => a.id !== article.id)],
@@ -45,6 +48,7 @@ export const useNewsStore = create<NewsStore>()(
           selectedSection: section,
           articles: [], // Clear articles when changing sections
         })),
+      setArticleCount: (count) => set({ articleCount: count }),
     }),
     {
       name: "news-store",

@@ -12,60 +12,54 @@ import { TopicBar } from "@/components/TopicBar"
 export default function Home() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [headlines, setHeadlines] = useState<string[]>([])
   
   const {
     articles,
     savedArticles,
     selectedSection,
-    addArticle,
     saveArticle,
     removeArticle,
+    articleCount
   } = useNewsStore()
   
-  const { generateHeadlines, generateArticle, cancelGeneration } = useNewsGeneration()
+  const { generateNews, cancelGeneration, isGenerating } = useNewsGeneration()
 
-  // Load headlines when section changes
+  // Load news when section changes
   useEffect(() => {
-    const loadHeadlines = async () => {
+    const loadNews = async () => {
       setIsLoading(true)
       setError(null)
       try {
-        const newHeadlines = await generateHeadlines(selectedSection)
-        setHeadlines(newHeadlines)
+        await generateNews(
+          selectedSection === "Breaking News" ? "breaking" : "section",
+          selectedSection,
+          articleCount
+        )
       } catch (error: any) {
-        setError(error?.message || 'Failed to load headlines. Please try again.')
+        setError(error?.message || 'Failed to load news. Please try again.')
       } finally {
         setIsLoading(false)
       }
     }
 
-    loadHeadlines()
+    loadNews()
 
     // Cleanup function to cancel any ongoing generation when section changes
     return () => {
       cancelGeneration()
-      setHeadlines([])
       setError(null)
     }
-  }, [selectedSection])
-
-  const handleHeadlineClick = async (headline: string) => {
-    try {
-      const article = await generateArticle(headline, selectedSection)
-      if (article) {
-        setHeadlines(prev => prev.filter(h => h !== headline))
-      }
-    } catch (error: any) {
-      setError(error?.message || 'Failed to generate article. Please try again.')
-    }
-  }
+  }, [selectedSection, articleCount])
 
   const filteredArticles = articles.filter(
     article => article.section === selectedSection
   )
 
   const savedArticleIds = savedArticles.map(article => article.id)
+
+  const savedArticlesInSection = savedArticles.filter(
+    article => article.section === selectedSection
+  )
 
   return (
     <div className="min-h-screen bg-background">
@@ -78,38 +72,51 @@ export default function Home() {
             <AlertTitle>Error</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
-        ) : isLoading ? (
+        ) : isLoading && !isGenerating ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
           </div>
         ) : (
-          <div className="space-y-6">
-            {headlines.length > 0 && (
-              <div className="grid grid-cols-1 gap-4">
-                {headlines.map((headline, index) => (
-                  <button
-                    key={index}
-                    onClick={() => handleHeadlineClick(headline)}
-                    className="w-full text-left p-4 rounded-lg border bg-card hover:bg-accent transition-colors"
-                  >
-                    <h3 className="text-lg font-semibold">{headline}</h3>
-                    <p className="text-sm text-muted-foreground mt-1">Click to read full article</p>
-                  </button>
-                ))}
+          <div className="space-y-8">
+            {/* Current Articles */}
+            {filteredArticles.length > 0 && (
+              <div>
+                <h2 className="text-2xl font-bold mb-4">Latest Articles</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredArticles.map((article) => (
+                    <ArticleTile
+                      key={article.id}
+                      article={article}
+                      isSaved={savedArticleIds.includes(article.id)}
+                      onSave={() => saveArticle(article)}
+                      onRemove={() => removeArticle(article.id)}
+                    />
+                  ))}
+                </div>
               </div>
             )}
-            {filteredArticles.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredArticles.map((article, index) => (
-                  <ArticleTile
-                    key={article.id}
-                    article={article}
-                    index={index}
-                    onSave={saveArticle}
-                    onRemove={() => removeArticle(article.id)}
-                    saved={savedArticleIds.includes(article.id)}
-                  />
-                ))}
+
+            {/* Saved Articles */}
+            {savedArticlesInSection.length > 0 && (
+              <div>
+                <h2 className="text-2xl font-bold mb-4">Saved Articles</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {savedArticlesInSection.map((article) => (
+                    <ArticleTile
+                      key={article.id}
+                      article={article}
+                      isSaved={true}
+                      onSave={() => {}}
+                      onRemove={() => removeArticle(article.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!isLoading && filteredArticles.length === 0 && savedArticlesInSection.length === 0 && (
+              <div className="text-center py-12 text-muted-foreground">
+                <p>No articles found. New articles will appear here.</p>
               </div>
             )}
           </div>
