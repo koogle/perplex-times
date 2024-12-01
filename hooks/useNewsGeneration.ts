@@ -1,51 +1,7 @@
 import { useState } from "react";
 import { Article, useNewsStore } from "@/store/newsStore";
 import { Cache } from "@/utils/cache";
-
-interface HeadlinesResponse {
-  headlines: string[];
-  error?: string;
-}
-
-interface ArticleResponse {
-  text: string;
-  error?: string;
-}
-
-interface KeywordsResponse {
-  keywords: string[];
-  error?: string;
-}
-
-const generateContent = async <T>(
-  type: string,
-  messages: Array<{ role: string; content: string }>,
-  signal?: AbortSignal
-): Promise<T> => {
-  const response = await fetch("/api/news", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messages,
-      type,
-    }),
-    signal,
-  });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || `Failed to generate content (${response.status})`);
-  }
-
-  if (data.error) {
-    throw new Error(data.error);
-  }
-
-  return data as T;
-};
+import { NewsItem, NewsResponse } from "@/types/news";
 
 export function useNewsGeneration() {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -62,7 +18,7 @@ export function useNewsGeneration() {
     }
   };
 
-  const generateHeadlines = async (section: string, minCount: number = 5) => {
+  const generateNews = async (type: string, section?: string) => {
     setError(null);
     // Cancel any ongoing generation
     cancelGeneration();
@@ -72,99 +28,60 @@ export function useNewsGeneration() {
     setAbortController(controller);
 
     try {
-      let headlines: string[] = [];
+      let newsItems: NewsItem[] = [];
       let attempts = 0;
       const maxAttempts = 3;
 
-      while (headlines.length < minCount && attempts < maxAttempts) {
-        const response = await generateContent<HeadlinesResponse>(
-          section === "Breaking News" ? "breaking" : "headlines",
-          [
-            {
-              role: "user",
-              content: section === "Breaking News"
-                ? "Generate the most important news headlines from the last 24 hours"
-                : `Generate current news headlines for the ${section} section`,
-            },
-          ],
-          controller.signal
-        );
-        
-        headlines = [...new Set([...headlines, ...response.headlines])];
+      while (newsItems.length < 5 && attempts < maxAttempts) {
+        const response = await fetch("/api/news", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            type,
+            section,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || `HTTP error! status: ${response.status}`);
+        }
+
+        const data: NewsResponse = await response.json();
+        newsItems = [...new Set([...newsItems, ...data.articles])];
         attempts++;
       }
 
+      // Convert NewsItems to Articles and cache them
+      const articles = newsItems.map((item): Article => ({
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        headline: item.headline,
+        content: item.summary,
+        summary: item.summary,
+        keywords: [],
+        section: item.section || section || 'Breaking News',
+        publishedAt: item.timestamp,
+        timestamp: Date.now(),
+      }));
+
+      // Cache and add articles
+      articles.forEach(article => {
+        const cacheKey = `article-${article.headline}`;
+        Cache.set(cacheKey, article);
+        addArticle(article);
+      });
+
       setAbortController(null);
-      return headlines;
+      return articles;
     } catch (error: any) {
       if (error.name === 'AbortError') {
         return []; // Return empty array if aborted
       }
-      const errorMessage = error.message || "Failed to generate headlines";
-      console.error("Error generating headlines:", errorMessage);
-      setError(errorMessage);
-      throw error;
-    }
-  };
-
-  const generateArticle = async (headline: string, section: string) => {
-    setIsGenerating(true);
-    setError(null);
-    
-    // Cancel any ongoing generation
-    cancelGeneration();
-    
-    // Create new abort controller
-    const controller = new AbortController();
-    setAbortController(controller);
-
-    try {
-      // Check cache first
-      const cacheKey = `article-${headline}`;
-      const cachedArticle: Article | null = Cache.get(cacheKey);
-
-      if (cachedArticle) {
-        addArticle(cachedArticle);
-        return cachedArticle;
-      }
-
-      // Generate the full article
-      const articleResponse = await generateContent<ArticleResponse>(
-        "article",
-        [{ role: "user", content: `Write a comprehensive news article for the headline: ${headline}` }],
-        controller.signal
-      );
-
-      // Generate keywords from the article
-      const keywordsResponse = await generateContent<KeywordsResponse>(
-        "keywords",
-        [{ role: "user", content: `Extract keywords from this article: ${articleResponse.text}` }],
-        controller.signal
-      );
-
-      const article = {
-        id: Date.now().toString(),
-        headline: headline.trim(),
-        content: articleResponse.text.trim(),
-        summary: articleResponse.text.split(".").slice(0, 2).join(".").trim() + ".",
-        keywords: keywordsResponse.keywords,
-        section,
-        publishedAt: new Date().toISOString(),
-        timestamp: Date.now(),
-      };
-
-      // Cache the article
-      Cache.set(cacheKey, article);
-      addArticle(article);
-
-      setAbortController(null);
-      return article;
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        return null; // Return null if aborted
-      }
-      const errorMessage = error.message || "Failed to generate article";
-      console.error("Error generating article:", errorMessage);
+      const errorMessage = error.message || "Failed to generate news";
+      console.error("Error generating news:", errorMessage);
       setError(errorMessage);
       throw error;
     } finally {
@@ -173,8 +90,7 @@ export function useNewsGeneration() {
   };
 
   return {
-    generateHeadlines,
-    generateArticle,
+    generateNews,
     isGenerating,
     error,
     cancelGeneration,
