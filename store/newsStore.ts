@@ -4,17 +4,18 @@ import { persist } from "zustand/middleware";
 export interface Article {
   id: string;
   headline: string;
-  content: string;
-  summary?: string;
-  keywords?: string[];
+  summary: string;
   section: string;
-  publishedAt?: string;
-  timestamp: number;  // Required timestamp in milliseconds
+  timestamp: string;
+  longFormContent?: string;
+  additionalContext?: string;
+  implications?: string;
+  isExpanding?: boolean;
 }
 
 interface SectionData {
   articles: Article[];
-  lastUpdated: number;
+  lastUpdated: string;
 }
 
 interface NewsState {
@@ -28,8 +29,9 @@ interface NewsState {
   setSelectedSection: (section: string) => void;
   setArticleCount: (count: number) => void;
   getArticlesForSection: (section: string) => Article[];
-  getSectionLastUpdated: (section: string) => number;
+  getSectionLastUpdated: (section: string) => string;
   needsUpdate: (section: string) => boolean;
+  expandArticle: (article: Article) => Promise<void>;
 }
 
 export const useNewsStore = create<NewsState>()(
@@ -46,7 +48,7 @@ export const useNewsStore = create<NewsState>()(
             ...state.sectionData,
             [section]: {
               articles,
-              lastUpdated: Date.now(),
+              lastUpdated: Date.now().toString(),
             },
           },
         })),
@@ -73,7 +75,7 @@ export const useNewsStore = create<NewsState>()(
 
       getSectionLastUpdated: (section) => {
         const state = get();
-        return state.sectionData[section]?.lastUpdated || 0;
+        return state.sectionData[section]?.lastUpdated || "0";
       },
 
       needsUpdate: (section) => {
@@ -82,8 +84,68 @@ export const useNewsStore = create<NewsState>()(
         if (!sectionData || !sectionData.articles.length) return true;
         
         const hourInMs = 60 * 60 * 1000;
-        const timeSinceLastUpdate = Date.now() - sectionData.lastUpdated;
+        const timeSinceLastUpdate = Date.now() - parseInt(sectionData.lastUpdated);
         return timeSinceLastUpdate > hourInMs;
+      },
+
+      expandArticle: async (article: Article) => {
+        // Mark article as expanding
+        set((state) => ({
+          sectionData: {
+            ...state.sectionData,
+            [article.section]: {
+              articles: state.sectionData[article.section].articles.map((a) =>
+                a.id === article.id ? { ...a, isExpanding: true } : a
+              ),
+              lastUpdated: state.sectionData[article.section].lastUpdated,
+            },
+          },
+        }))
+
+        try {
+          const response = await fetch("/api/expand", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ headline: article.headline }),
+          })
+
+          if (!response.ok) throw new Error("Failed to expand article")
+
+          const expandedData = await response.json()
+
+          // Update article with expanded content
+          set((state) => ({
+            sectionData: {
+              ...state.sectionData,
+              [article.section]: {
+                articles: state.sectionData[article.section].articles.map((a) =>
+                  a.id === article.id
+                    ? {
+                        ...a,
+                        ...expandedData,
+                        isExpanding: false,
+                      }
+                    : a
+                ),
+                lastUpdated: state.sectionData[article.section].lastUpdated,
+              },
+            },
+          }))
+        } catch (error) {
+          console.error("Error expanding article:", error)
+          // Reset expanding state on error
+          set((state) => ({
+            sectionData: {
+              ...state.sectionData,
+              [article.section]: {
+                articles: state.sectionData[article.section].articles.map((a) =>
+                  a.id === article.id ? { ...a, isExpanding: false } : a
+                ),
+                lastUpdated: state.sectionData[article.section].lastUpdated,
+              },
+            },
+          }))
+        }
       },
     }),
     {

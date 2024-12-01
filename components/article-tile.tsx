@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Tag, Bookmark, BookmarkCheck } from 'lucide-react'
+import { Tag, Bookmark, BookmarkCheck, X, Loader2 } from 'lucide-react'
 import { motion, AnimatePresence } from "framer-motion"
 
 import { Button } from "@/components/ui/button"
@@ -13,9 +13,11 @@ import { Article } from "@/store/newsStore"
 
 interface ArticleTileProps {
   article: Article
-  onSave?: (article: Article) => void
+  onSave?: () => void
   onRemove?: () => void
-  saved?: boolean
+  onClick?: () => void
+  onClose?: () => void
+  expanded?: boolean
   index: number
 }
 
@@ -23,111 +25,106 @@ export function ArticleTile({
   article,
   onSave,
   onRemove,
-  saved = false,
-  index
+  onClick,
+  onClose,
+  expanded,
+  index,
 }: ArticleTileProps) {
-  const [isExpanded, setIsExpanded] = useState(false)
-
-  // Generate a summary from the content if not provided
-  const summary = article.summary || article.content?.split('.').slice(0, 2).join('.') + '.'
-
   return (
     <motion.div
-      layout
+      layout="preserve-aspect"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ 
+        duration: 0.8,
+        delay: index * 0.3,
+        ease: "easeInOut",
+        layout: {
+          duration: 0.3
+        }
+      }}
+      onClick={onClick}
       className={cn(
-        "group relative aspect-square bg-card text-card-foreground transition-colors duration-300 hover:bg-accent/50",
-        isExpanded && "col-span-2 row-span-3 aspect-auto z-50 bg-background border-black shadow-xl"
+        "group relative rounded-none border border-neutral-200 p-4 transition-colors",
+        expanded ? "h-[calc(100vh-12rem)] overflow-y-auto" : "hover:-translate-y-1 hover:shadow-lg cursor-pointer",
       )}
-      onClick={() => !isExpanded && setIsExpanded(true)}
+      style={!expanded ? { aspectRatio: '1.618' } : undefined}
     >
-      <motion.div
-        layout
-        className={cn(
-          "h-full w-full p-4",
-          isExpanded ? "overflow-y-auto" : "overflow-hidden"
-        )}
-      >
-        {isExpanded && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="absolute right-2 top-2"
-            onClick={(e) => {
-              e.stopPropagation()
-              setIsExpanded(false)
-            }}
-          >
-            ×
-          </Button>
-        )}
-        <div className="flex justify-between items-start mb-2">
-          <div className="text-xs text-muted-foreground">
-            {formatTime(article.timestamp)}
+      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1 flex-1">
+            <div className="flex items-center justify-between text-xs text-neutral-500">
+              <span>{formatTime(article.timestamp)}</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onSave?.()
+                }}
+                className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              >
+                <Bookmark className="h-4 w-4" />
+                <span className="sr-only">Save</span>
+              </button>
+            </div>
+            <h2 className={cn(
+              "font-medium leading-tight",
+              expanded ? "text-2xl" : "text-base"
+            )}>
+              {article.headline}
+            </h2>
           </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            className={cn(
-              "absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity",
-              saved && "opacity-100"
-            )}
-            onClick={(e) => {
-              e.stopPropagation()
-              saved ? onRemove?.() : onSave?.(article)
-            }}
-          >
-            {saved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
-          </Button>
+          {expanded && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onClose?.()
+              }}
+              className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            >
+              <X className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </button>
+          )}
         </div>
 
-        <motion.h3
-          layout="position"
-          className={cn(
-            "font-bold leading-tight tracking-tight",
-            isExpanded ? "text-xl mb-4" : "text-sm mb-2"
-          )}
-        >
-          {article.headline}
-        </motion.h3>
-        <motion.p
-          layout="position"
-          className="text-sm text-muted-foreground line-clamp-3"
-        >
-          {summary}
-        </motion.p>
-        <AnimatePresence>
-          {isExpanded && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="mt-4 space-y-4"
-            >
-              <div className="prose prose-sm dark:prose-invert whitespace-pre-wrap">
-                {article.content}
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Tag className="h-4 w-4" />
-                  <span className="text-sm font-medium">Keywords</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {article.keywords?.map((keyword, i) => (
-                    <Badge key={i} variant="outline">
-                      {keyword}
-                    </Badge>
-                  ))}
+        {expanded ? (
+          <div className="space-y-6">
+            {article.isExpanding ? (
+              <div className="space-y-6">
+                <p className="text-neutral-600">{article.summary}</p>
+                <div className="flex items-center justify-center space-x-2 text-neutral-600">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Loading full article...</span>
                 </div>
               </div>
-              <div className="flex justify-between items-center pt-4 border-t">
-                <div className="text-sm text-muted-foreground">
-                  {new Date(article.publishedAt).toLocaleDateString()}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
+            ) : (
+              <>
+                {article.longFormContent && (
+                  <div className="prose prose-sm max-w-none">
+                    <p className="text-base leading-relaxed">{article.longFormContent}</p>
+                  </div>
+                )}
+                {article.additionalContext && (
+                  <div className="prose prose-sm max-w-none">
+                    <h3 className="text-lg font-medium">Additional Context</h3>
+                    <p className="text-sm leading-relaxed text-neutral-600">{article.additionalContext}</p>
+                  </div>
+                )}
+                {article.implications && (
+                  <div className="prose prose-sm max-w-none">
+                    <h3 className="text-lg font-medium">Implications</h3>
+                    <p className="text-sm leading-relaxed text-neutral-600">{article.implications}</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        ) : (
+          <p className="line-clamp-3 text-sm leading-relaxed text-neutral-600">
+            {article.summary}
+          </p>
+        )}
+      </div>
     </motion.div>
   )
 }

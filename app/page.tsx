@@ -9,10 +9,13 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
 import { TopicBar } from "@/components/TopicBar"
 import { formatTime } from "@/lib/utils/time"
+import { cn } from "@/lib/utils/cn"
+import { motion, AnimatePresence, LayoutGroup } from "framer-motion"
 
 export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [expandedArticle, setExpandedArticle] = useState<Article | null>(null)
   
   const {
     selectedSection,
@@ -21,13 +24,19 @@ export default function Home() {
     articleCount,
     getArticlesForSection,
     getSectionLastUpdated,
-    needsUpdate
+    needsUpdate,
+    expandArticle
   } = useNewsStore()
   
   const { generateNews, cancelGeneration } = useNewsGeneration()
 
   const articles = getArticlesForSection(selectedSection)
   const lastUpdated = getSectionLastUpdated(selectedSection)
+
+  // Reset expanded article when section changes
+  useEffect(() => {
+    setExpandedArticle(null)
+  }, [selectedSection])
 
   // Load news when section changes or when needed
   useEffect(() => {
@@ -45,7 +54,10 @@ export default function Home() {
           articleCount
         )
       } catch (error: any) {
-        setError(error?.message || 'Failed to load news. Please try again.')
+        // Don't show error for aborted requests
+        if (error?.name !== 'AbortError') {
+          setError(error?.message || 'Failed to load news. Please try again.')
+        }
       } finally {
         setIsLoading(false)
       }
@@ -56,6 +68,7 @@ export default function Home() {
     return () => {
       cancelGeneration()
       setError(null)
+      setIsLoading(false)
     }
   }, [selectedSection, articleCount])
 
@@ -85,44 +98,91 @@ export default function Home() {
         ) : (
           <div className="space-y-8">
             <div className="flex items-center justify-between">
-              <div className="text-sm text-muted-foreground">
-                {lastUpdated > 0 && `Last updated: ${formatTime(lastUpdated)}`}
-              </div>
-              {isLoading && (
+              {isLoading ? (
                 <div className="text-sm text-muted-foreground animate-pulse">
                   Generating news...
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  {lastUpdated > 0 && `Last updated: ${formatTime(lastUpdated)}`}
                 </div>
               )}
             </div>
             
-            {/* Current Articles */}
+            {/* Articles Layout */}
             {(filteredArticles.length > 0 || isLoading) && (
-              <div className="space-y-4">
-                <h2 className="text-2xl font-bold tracking-tight">Latest News</h2>
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                  {isLoading ? (
-                    // Loading placeholders
-                    Array.from({ length: articleCount }).map((_, index) => (
-                      <div 
-                        key={index} 
-                        className="aspect-square bg-muted animate-pulse rounded-none border border-black p-4"
-                      >
-                        <div className="h-4 w-1/3 bg-muted-foreground/20 mb-4"></div>
-                        <div className="h-6 w-3/4 bg-muted-foreground/20"></div>
-                      </div>
-                    ))
-                  ) : (
-                    filteredArticles.map((article) => (
-                      <ArticleTile
-                        key={article.id}
-                        article={article}
-                        onSave={() => saveArticle(article)}
-                        index={0}
-                      />
-                    ))
+              <LayoutGroup>
+                <motion.div
+                  layout
+                  className={cn(
+                    expandedArticle 
+                      ? "grid grid-cols-[2fr_1fr] gap-6" 
+                      : "grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
                   )}
-                </div>
-              </div>
+                >
+                  {/* Expanded Article */}
+                  <AnimatePresence>
+                    {expandedArticle && (
+                      <motion.div
+                        layout
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                      >
+                        <ArticleTile
+                          key={expandedArticle.id}
+                          article={expandedArticle}
+                          onSave={() => saveArticle(expandedArticle)}
+                          onClose={() => setExpandedArticle(null)}
+                          expanded={true}
+                          index={0}
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Article List */}
+                  <motion.div
+                    layout
+                    className={cn(
+                      expandedArticle 
+                        ? "overflow-y-auto max-h-[calc(100vh-12rem)] space-y-6"
+                        : "col-span-full grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
+                    )}
+                  >
+                    {isLoading ? (
+                      // Loading placeholders
+                      Array.from({ length: articleCount }).map((_, index) => (
+                        <motion.div 
+                          layout
+                          key={index} 
+                          className="rounded-none border border-black p-4 animate-pulse"
+                          style={{ aspectRatio: '1.618' }}
+                        >
+                          <div className="h-4 w-1/3 bg-black/10 mb-4"></div>
+                          <div className="h-6 w-3/4 bg-black/10"></div>
+                        </motion.div>
+                      ))
+                    ) : (
+                      filteredArticles
+                        .filter(article => article.id !== expandedArticle?.id)
+                        .map((article, index) => (
+                          <motion.div layout key={article.id}>
+                            <ArticleTile
+                              article={article}
+                              onSave={() => saveArticle(article)}
+                              onClick={() => {
+                                setExpandedArticle(article)
+                                expandArticle(article)
+                              }}
+                              index={index}
+                            />
+                          </motion.div>
+                        ))
+                    )}
+                  </motion.div>
+                </motion.div>
+              </LayoutGroup>
             )}
 
             {/* Saved Articles */}
@@ -134,18 +194,19 @@ export default function Home() {
                     <ArticleTile
                       key={article.id}
                       article={article}
-                      saved
                       onRemove={() => removeArticle(article.id)}
+                      index={0}
                     />
                   ))}
                 </div>
               </div>
             )}
 
-            {filteredArticles.length === 0 && savedArticlesInSection.length === 0 && (
-              <div className="text-center py-12 text-muted-foreground">
-                <p>No articles found. New articles will appear here.</p>
-              </div>
+            {/* No Articles Message */}
+            {!isLoading && filteredArticles.length === 0 && savedArticlesInSection.length === 0 && (
+              <p className="text-center text-muted-foreground">
+                No articles found. New articles will appear here.
+              </p>
             )}
           </div>
         )}
