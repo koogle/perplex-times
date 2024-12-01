@@ -1,30 +1,24 @@
-import { useState } from "react";
-import { Article, useNewsStore } from "@/store/newsStore";
-import { Cache } from "@/utils/cache";
-import { NewsItem, NewsResponse } from "@/types/news";
+import { useState, useRef } from "react";
+import { useNewsStore } from "@/store/newsStore";
 
 export function useNewsGeneration() {
   const [isGenerating, setIsGenerating] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [abortController, setAbortController] = useState<AbortController | null>(null);
-  const { addArticle } = useNewsStore();
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const cancelGeneration = () => {
-    if (abortController) {
-      abortController.abort();
-      setAbortController(null);
-      setIsGenerating(false);
-      setProgress(0);
-      setError(null);
-    }
-  };
+  const addArticles = useNewsStore((state) => state.addArticles);
 
-  const generateSingleArticle = async (
-    type: string,
+  const generateNews = async (
+    type: "breaking" | "section",
     section: string,
-    signal: AbortSignal
-  ): Promise<Article | null> => {
+    count: number
+  ) => {
+    if (isGenerating) {
+      return;
+    }
+
+    setIsGenerating(true);
+    abortControllerRef.current = new AbortController();
+
     try {
       const response = await fetch("/api/news", {
         method: "POST",
@@ -34,108 +28,47 @@ export function useNewsGeneration() {
         body: JSON.stringify({
           type,
           section,
-          count: 1, // Request only one article
+          count,
         }),
-        signal,
+        signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || `HTTP error! status: ${response.status}`);
+        throw new Error("Failed to generate news");
       }
 
-      const data: NewsResponse = await response.json();
+      const articles = await response.json();
       
-      if (!data.articles || data.articles.length === 0) {
-        return null;
-      }
-
-      const item = data.articles[0];
-      const article: Article = {
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-        headline: item.headline,
-        content: item.summary,
-        summary: item.summary,
-        keywords: [],
-        section: item.section || section,
-        publishedAt: item.timestamp,
-        timestamp: Date.now(),
-      };
-
-      const cacheKey = `article-${article.headline}`;
-      Cache.set(cacheKey, article);
-      addArticle(article);
-
-      return article;
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        return null;
-      }
-      throw error;
+      // Ensure articles is an array before adding to store
+      const articlesArray = Array.isArray(articles) ? articles : 
+        articles?.articles ? articles.articles : [];
+      
+      // Add timestamps and IDs to articles
+      const timestamp = Date.now();
+      const processedArticles = articlesArray.map(article => ({
+        ...article,
+        id: `${timestamp}-${Math.random().toString(36).substr(2, 9)}`,
+        timestamp,
+        section
+      }));
+        
+      addArticles(processedArticles, section);
+    } finally {
+      setIsGenerating(false);
+      abortControllerRef.current = null;
     }
   };
 
-  const generateNews = async (
-    type: string,
-    section: string,
-    count: number = 5
-  ) => {
-    setError(null);
-    setProgress(0);
-    cancelGeneration();
-    
-    const controller = new AbortController();
-    setAbortController(controller);
-    setIsGenerating(true);
-
-    try {
-      // Create array of promises for parallel execution
-      const promises = Array(count).fill(null).map(() => 
-        generateSingleArticle(type, section, controller.signal)
-      );
-
-      // Execute all promises in parallel with progress tracking
-      let completed = 0;
-      const results = await Promise.allSettled(promises);
-      
-      results.forEach((result) => {
-        completed++;
-        setProgress((completed / count) * 100);
-        
-        if (result.status === 'rejected') {
-          console.error('Article generation failed:', result.reason);
-        }
-      });
-
-      // Filter out failed generations and null results
-      const articles = results
-        .filter((result): result is PromiseFulfilledResult<Article | null> => 
-          result.status === 'fulfilled'
-        )
-        .map(result => result.value)
-        .filter((article): article is Article => article !== null);
-
-      return articles;
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        return [];
-      }
-      const errorMessage = error.message || "Failed to generate news";
-      console.error("Error generating news:", errorMessage);
-      setError(errorMessage);
-      throw error;
-    } finally {
-      setIsGenerating(false);
-      setProgress(0);
-      setAbortController(null);
+  const cancelGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
   };
 
   return {
     generateNews,
-    isGenerating,
-    progress,
-    error,
     cancelGeneration,
+    isGenerating,
   };
 }

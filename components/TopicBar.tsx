@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useNewsStore } from "@/store/newsStore";
 
@@ -28,7 +27,7 @@ export function TopicBar() {
               onClick={() => setSelectedSection(section)}
               className={`h-8 ${
                 section === "Breaking News"
-                  ? "font-semibold text-red-500 hover:text-red-600"
+                  ? "font-semibold text-[#1A1A1A] hover:text-black"
                   : ""
               }`}
             >

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
+import { formatTime } from "@/lib/utils/time"
 import { Article } from "@/store/newsStore"
 
 interface ArticleTileProps {
@@ -50,7 +51,7 @@ export function ArticleTile({
           <Button
             size="sm"
             variant="ghost"
-            className="absolute right-4 top-4"
+            className="absolute right-2 top-2"
             onClick={(e) => {
               e.stopPropagation()
               setIsExpanded(false)
@@ -59,9 +60,32 @@ export function ArticleTile({
             ×
           </Button>
         )}
+        <div className="flex justify-between items-start mb-2">
+          <div className="text-xs text-muted-foreground">
+            {formatTime(article.timestamp)}
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className={cn(
+              "absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity",
+              saved && "opacity-100"
+            )}
+            onClick={(e) => {
+              e.stopPropagation()
+              saved ? onRemove?.() : onSave?.(article)
+            }}
+          >
+            {saved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
+          </Button>
+        </div>
+
         <motion.h3
           layout="position"
-          className="text-lg font-semibold leading-tight mb-2"
+          className={cn(
+            "font-bold leading-tight tracking-tight",
+            isExpanded ? "text-xl mb-4" : "text-sm mb-2"
+          )}
         >
           {article.headline}
         </motion.h3>
@@ -99,24 +123,6 @@ export function ArticleTile({
                 <div className="text-sm text-muted-foreground">
                   {new Date(article.publishedAt).toLocaleDateString()}
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    if (saved && onRemove) {
-                      onRemove()
-                    } else if (onSave) {
-                      onSave(article)
-                    }
-                  }}
-                >
-                  {saved ? (
-                    <BookmarkCheck className="h-4 w-4" />
-                  ) : (
-                    <Bookmark className="h-4 w-4" />
-                  )}
-                </Button>
               </div>
             </motion.div>
           )}

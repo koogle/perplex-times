@@ -13,13 +13,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Progress } from "@/components/ui/progress"
 import { RefreshCw } from "lucide-react"
 
 export function SiteHeader() {
   const pathname = usePathname()
   const { selectedSection } = useNewsStore()
-  const { generateNews, isGenerating, progress } = useNewsGeneration()
+  const { generateNews, isGenerating } = useNewsGeneration()
   const articleCount = useNewsStore((state) => state.articleCount)
   const setArticleCount = useNewsStore((state) => state.setArticleCount)
 
@@ -51,41 +50,29 @@ export function SiteHeader() {
               Saved Articles
             </Link>
           </nav>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isGenerating}
+              className={cn(isGenerating && "animate-spin")}
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
             <Select
               value={articleCount.toString()}
               onValueChange={(value) => setArticleCount(parseInt(value))}
             >
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Number of articles" />
+              <SelectTrigger>
+                <SelectValue placeholder="Article count" />
               </SelectTrigger>
               <SelectContent>
-                {[3, 5, 10, 15, 20].map((count) => (
-                  <SelectItem key={count} value={count.toString()}>
-                    {count} Articles
-                  </SelectItem>
-                ))}
+                <SelectItem value="3">3 Articles</SelectItem>
+                <SelectItem value="5">5 Articles</SelectItem>
+                <SelectItem value="10">10 Articles</SelectItem>
               </SelectContent>
             </Select>
-            <Button 
-              onClick={handleRefresh}
-              disabled={isGenerating}
-              size="icon"
-              variant="ghost"
-              className={cn(
-                "h-8 w-8",
-                isGenerating && "animate-spin"
-              )}
-            >
-              <RefreshCw className="h-4 w-4" />
-              <span className="sr-only">Refresh articles</span>
-            </Button>
-            {isGenerating && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Progress value={progress} className="w-[60px]" />
-                <span>{Math.round(progress)}%</span>
-              </div>
-            )}
           </div>
         </div>
       </div>
