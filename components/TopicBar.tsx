@@ -26,17 +26,10 @@ export function TopicBar() {
               className={cn(
                 "relative px-4 py-1.5 text-sm font-medium transition-colors",
                 "hover:text-foreground/80",
-                // Add corner borders using pseudo-elements
-                "before:absolute before:left-0 before:top-0 before:h-[2px] before:w-[8px]",
-                "after:absolute after:right-0 before:top-0 after:h-[2px] after:w-[8px]",
-                // Top borders
-                "before:border-t after:border-t",
-                // Bottom borders
-                "before:bottom-0 before:top-auto before:border-b",
-                "after:bottom-0 after:top-auto after:border-b",
+                "border border-black",
                 selectedSection === section
-                  ? "text-foreground before:border-foreground after:border-foreground"
-                  : "text-foreground/60 before:border-transparent after:border-transparent"
+                  ? "text-foreground bg-gray-100"
+                  : "text-foreground/60"
               )}
             >
               {section}

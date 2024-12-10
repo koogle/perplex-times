@@ -1,71 +1,168 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useNewsStore } from '@/store/newsStore';
-import { ArticleGrid } from '@/components/ArticleGrid';
+import { useState } from "react";
+import { SiteHeader } from "@/components/site-header";
+import { ArticleTile } from "@/components/article-tile";
+import { Article, useNewsStore } from "@/store/newsStore";
+import { cn } from "@/lib/utils";
+import { formatTime } from "@/lib/utils/time";
+import { motion } from "framer-motion";
 
 export default function SavedArticles() {
-  const [selectedKeyword, setSelectedKeyword] = useState<string | null>(null);
-  const { savedArticles, userKeywords, removeArticle } = useNewsStore();
+  const [selectedArticle, setSelectedArticle] = useState<string | null>(null);
+  const [expandedArticle, setExpandedArticle] = useState<Article | null>(null);
+  const { savedArticles } = useNewsStore();
 
-  // Get all unique keywords from saved articles
-  const allKeywords = Array.from(
-    new Set(savedArticles.flatMap((article) => article.keywords))
+  // Sort articles by timestamp, newest first
+  const sortedArticles = [...savedArticles].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   );
 
-  // Filter articles based on selected keyword
-  const filteredArticles = selectedKeyword
-    ? savedArticles.filter((article) =>
-        article.keywords.includes(selectedKeyword)
-      )
-    : savedArticles;
+  const handleExpandArticle = async (article: Article) => {
+    setExpandedArticle({
+      ...article,
+      isExpanding: true,
+      longFormContent: "",
+    });
+
+    // Check if we already have expanded content
+    const existingContent =
+      useNewsStore.getState().expandedArticles[article.id];
+    if (existingContent) {
+      setExpandedArticle({
+        ...article,
+        isExpanding: false,
+        longFormContent: existingContent.longFormContent,
+        additionalContext: existingContent.additionalContext,
+        implications: existingContent.implications,
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/expand", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ headline: article.headline }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to expand article");
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error("No reader available");
+      }
+
+      let accumulatedContent = "";
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) {
+          break;
+        }
+
+        const text = decoder.decode(value);
+        accumulatedContent += text;
+
+        setExpandedArticle(prev => ({
+          ...prev!,
+          longFormContent: accumulatedContent,
+        }));
+      }
+
+      // Store the expanded content
+      useNewsStore.getState().setExpandedArticle(article.id, {
+        longFormContent: accumulatedContent,
+        additionalContext: "",  // You might want to parse the content to separate these sections
+        implications: "",
+      });
+
+      setExpandedArticle(prev => ({
+        ...prev!,
+        isExpanding: false,
+      }));
+
+    } catch (error) {
+      console.error("Error expanding article:", error);
+      setExpandedArticle(prev => ({
+        ...prev!,
+        isExpanding: false,
+        error: "Failed to expand article",
+      }));
+    }
+  };
 
   return (
-    <main className="container mx-auto px-4 py-8">
-      <h1 className="mb-8 text-4xl font-bold">Saved Articles</h1>
+    <div className="relative min-h-screen">
+      <SiteHeader />
 
-      {/* Keywords Filter */}
-      <div className="mb-8">
-        <h2 className="mb-4 text-xl font-semibold">Filter by Keyword</h2>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setSelectedKeyword(null)}
-            className={`rounded-full px-4 py-2 ${
-              selectedKeyword === null
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-            }`}
-          >
-            All
-          </button>
-          {allKeywords.map((keyword) => (
-            <button
-              key={keyword}
-              onClick={() => setSelectedKeyword(keyword)}
-              className={`rounded-full px-4 py-2 ${
-                selectedKeyword === keyword
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-              }`}
+      <div className="container flex gap-6 py-6">
+        {/* Saved Articles Drawer */}
+        <div className="w-80 shrink-0 border-r pr-6">
+          <h2 className="mb-4 text-lg font-medium">Saved Articles</h2>
+          <div className="space-y-4">
+            {sortedArticles.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No saved articles</p>
+            ) : (
+              sortedArticles.map((article) => (
+                <button
+                  key={article.id}
+                  onClick={() => {
+                    setSelectedArticle(article.id);
+                    handleExpandArticle(article);
+                  }}
+                  className={cn(
+                    "w-full text-left",
+                    "border p-3 hover:bg-gray-50",
+                    selectedArticle === article.id && "bg-gray-50"
+                  )}
+                >
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">
+                      {formatTime(new Date(article.timestamp).getTime())}
+                    </p>
+                    <p className="line-clamp-2 text-sm font-medium">
+                      {article.headline}
+                    </p>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Article Content */}
+        <div className="flex-1">
+          {expandedArticle ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
             >
-              {keyword}
-            </button>
-          ))}
+              <ArticleTile
+                article={expandedArticle}
+                expanded={true}
+                onClose={() => {
+                  setExpandedArticle(null);
+                  setSelectedArticle(null);
+                }}
+                index={0}
+              />
+            </motion.div>
+          ) : (
+            <div className="flex h-[50vh] items-center justify-center text-muted-foreground">
+              Select an article to read
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Timeline */}
-      <div className="mb-8">
-        {filteredArticles.length === 0 ? (
-          <p className="text-center text-gray-500">No saved articles yet</p>
-        ) : (
-          <ArticleGrid
-            articles={filteredArticles}
-            onSave={(article) => removeArticle(article.id)}
-            savedArticles={savedArticles.map((article) => article.id)}
-          />
-        )}
-      </div>
-    </main>
+    </div>
   );
 }

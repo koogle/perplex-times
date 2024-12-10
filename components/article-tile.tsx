@@ -1,14 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { Tag, Bookmark, BookmarkCheck, X, Loader2 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { Bookmark, X, Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
+import { useNewsStore } from "@/store/newsStore";
 
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { formatTime } from "@/lib/utils/time";
 import { Article, ExpandedArticle } from "@/store/newsStore";
 
 interface ArticleTileProps {
@@ -18,20 +14,18 @@ interface ArticleTileProps {
   onClick?: () => void;
   onClose?: () => void;
   expanded?: boolean;
-  expandedContent?: ExpandedArticle;
   index: number;
 }
 
 export function ArticleTile({
   article,
   onSave,
-  onRemove,
-  onClick,
   onClose,
   expanded,
-  expandedContent,
   index,
 }: ArticleTileProps) {
+  const streamingContent = useNewsStore((state) => state.streamingContent[article.id] || '');
+
   return (
     <motion.article
       layout
@@ -48,7 +42,7 @@ export function ArticleTile({
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1 flex-1">
             <div className="flex items-center justify-between text-xs text-neutral-500">
-              <span>{formatTime(article.timestamp)}</span>
+              <span>{article.timestamp}</span>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -60,86 +54,40 @@ export function ArticleTile({
                 <span className="sr-only">Save</span>
               </button>
             </div>
-            <h2
-              className={cn(
-                "font-medium leading-tight",
-                expanded ? "text-2xl" : "text-base"
-              )}
-            >
+            <h3 className="font-semibold leading-none tracking-tight">
               {article.headline}
-            </h2>
+            </h3>
+            <p className="text-sm text-muted-foreground">{article.summary}</p>
           </div>
-          {expanded && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose?.();
-              }}
-              className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-            >
-              <X className="h-4 w-4" />
-              <span className="sr-only">Close</span>
-            </button>
-          )}
         </div>
 
-        {expanded ? (
-          <div className="space-y-6">
-            <p className="text-neutral-600">{article.summary}</p>
-            
+        {expanded && (
+          <div className="space-y-4">
             {article.isExpanding ? (
-              <div className="flex items-center justify-center space-x-2 text-neutral-600">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Loading full article...</span>
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin" />
               </div>
             ) : (
-              <>
-                {article.longFormContent && (
-                  <div className="prose prose-sm max-w-none">
-                    <p className="text-base leading-relaxed">
-                      {article.longFormContent}
-                    </p>
+              <div className="prose prose-sm max-w-none dark:prose-invert">
+                {streamingContent && (
+                  <div className="space-y-4 whitespace-pre-wrap leading-relaxed">
+                    {streamingContent}
                   </div>
                 )}
-                {article.additionalContext && (
-                  <div className="prose prose-sm max-w-none">
-                    <h3 className="text-lg font-medium">Additional Context</h3>
-                    <p className="text-sm leading-relaxed text-neutral-600">
-                      {article.additionalContext}
-                    </p>
-                  </div>
-                )}
-                {article.implications && (
-                  <div className="prose prose-sm max-w-none">
-                    <h3 className="text-lg font-medium">Implications</h3>
-                    <p className="text-sm leading-relaxed text-neutral-600">
-                      {article.implications}
-                    </p>
-                  </div>
-                )}
-              </>
+              </div>
             )}
           </div>
-        ) : (
-          <p className="line-clamp-3 text-sm leading-relaxed text-neutral-600">
-            {article.summary}
-          </p>
         )}
       </div>
 
-      {expanded && expandedContent && (
-        <div className="mt-4 space-y-4">
-          <div className="prose max-w-none">
-            <h3 className="text-lg font-semibold">Full Article</h3>
-            <p>{expandedContent.longFormContent}</p>
-
-            <h4 className="text-md font-semibold mt-4">Background Context</h4>
-            <p>{expandedContent.additionalContext}</p>
-
-            <h4 className="text-md font-semibold mt-4">Implications</h4>
-            <p>{expandedContent.implications}</p>
-          </div>
-        </div>
+      {expanded && onClose && (
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+        >
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
+        </button>
       )}
     </motion.article>
   );
