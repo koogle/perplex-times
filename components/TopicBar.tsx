@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useNewsStore } from "@/store/newsStore";
 
 const sections = [
@@ -8,34 +8,42 @@ const sections = [
   "Technology",
   "Business",
   "Science",
-  "Health",
   "Politics",
-  "Entertainment",
+  "Sports",
 ];
 
 export function TopicBar() {
   const { selectedSection, setSelectedSection } = useNewsStore();
 
   return (
-    <div className="sticky top-14 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-12 items-center justify-between">
-        <div className="flex items-center space-x-4">
+    <div className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <nav className="container flex h-14 max-w-screen-2xl items-center">
+        <div className="flex gap-2 overflow-x-auto pb-2">
           {sections.map((section) => (
-            <Button
+            <button
               key={section}
-              variant={selectedSection === section ? "default" : "ghost"}
               onClick={() => setSelectedSection(section)}
-              className={`h-8 ${
-                section === "Breaking News"
-                  ? "font-semibold text-[#1A1A1A] hover:text-black"
-                  : ""
-              }`}
+              className={cn(
+                "relative px-4 py-1.5 text-sm font-medium transition-colors",
+                "hover:text-foreground/80",
+                // Add corner borders using pseudo-elements
+                "before:absolute before:left-0 before:top-0 before:h-[2px] before:w-[8px]",
+                "after:absolute after:right-0 before:top-0 after:h-[2px] after:w-[8px]",
+                // Top borders
+                "before:border-t after:border-t",
+                // Bottom borders
+                "before:bottom-0 before:top-auto before:border-b",
+                "after:bottom-0 after:top-auto after:border-b",
+                selectedSection === section
+                  ? "text-foreground before:border-foreground after:border-foreground"
+                  : "text-foreground/60 before:border-transparent after:border-transparent"
+              )}
             >
               {section}
-            </Button>
+            </button>
           ))}
         </div>
-      </div>
+      </nav>
     </div>
   );
 }

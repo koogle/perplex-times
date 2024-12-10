@@ -13,139 +13,123 @@ export interface Article {
   isExpanding?: boolean;
 }
 
-interface SectionData {
-  articles: Article[];
-  lastUpdated: string;
+interface ExpandedArticle {
+  longFormContent: string;
+  additionalContext: string;
+  implications: string;
+  lastUpdated: number;
 }
 
-interface NewsState {
-  sectionData: Record<string, SectionData>;
+interface NewsStore {
+  articles: { [section: string]: Article[] };
   savedArticles: Article[];
   selectedSection: string;
+  sectionLastUpdated: { [section: string]: number };
+  expandedArticles: { [id: string]: ExpandedArticle };
   articleCount: number;
-  addArticles: (articles: Article[], section: string) => void;
+
+  // Actions
+  setArticles: (section: string, articles: Article[]) => void;
+  addArticles: (section: string, newArticles: Article[]) => void;
   saveArticle: (article: Article) => void;
   removeArticle: (id: string) => void;
   setSelectedSection: (section: string) => void;
+  setExpandedArticle: (id: string, expandedContent: ExpandedArticle) => void;
   setArticleCount: (count: number) => void;
+
+  // Getters
   getArticlesForSection: (section: string) => Article[];
-  getSectionLastUpdated: (section: string) => string;
+  getSectionLastUpdated: (section: string) => number;
   needsUpdate: (section: string) => boolean;
-  expandArticle: (article: Article) => Promise<void>;
 }
 
-export const useNewsStore = create<NewsState>()(
+const ONE_WEEK = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+
+export const useNewsStore = create<NewsStore>()(
   persist(
     (set, get) => ({
-      sectionData: {},
+      articles: {},
       savedArticles: [],
       selectedSection: "Breaking News",
-      articleCount: 5,
+      sectionLastUpdated: {},
+      expandedArticles: {},
+      articleCount: 6,
 
-      addArticles: (articles, section) =>
+      setArticles: (section, articles) =>
         set((state) => ({
-          sectionData: {
-            ...state.sectionData,
-            [section]: {
-              articles,
-              lastUpdated: Date.now().toString(),
-            },
+          articles: {
+            ...state.articles,
+            [section]: articles,
+          },
+          sectionLastUpdated: {
+            ...state.sectionLastUpdated,
+            [section]: Date.now(),
           },
         })),
 
+      addArticles: (section, newArticles) =>
+        set((state) => {
+          const existingArticles = state.articles[section] || [];
+          const existingIds = new Set(existingArticles.map(article => article.id));
+          
+          // Filter out duplicates
+          const uniqueNewArticles = newArticles.filter(
+            article => !existingIds.has(article.id)
+          );
+
+          return {
+            articles: {
+              ...state.articles,
+              [section]: [...existingArticles, ...uniqueNewArticles],
+            },
+            sectionLastUpdated: {
+              ...state.sectionLastUpdated,
+              [section]: Date.now(),
+            },
+          };
+        }),
+
       saveArticle: (article) =>
         set((state) => ({
-          savedArticles: [article, ...state.savedArticles.filter((a) => a.id !== article.id)],
+          savedArticles: [...state.savedArticles, article],
         })),
 
       removeArticle: (id) =>
         set((state) => ({
-          savedArticles: state.savedArticles.filter((a) => a.id !== id),
+          savedArticles: state.savedArticles.filter(
+            (article) => article.id !== id
+          ),
         })),
 
       setSelectedSection: (section) => set({ selectedSection: section }),
-      
+
+      setExpandedArticle: (id, expandedContent) =>
+        set((state) => ({
+          expandedArticles: {
+            ...state.expandedArticles,
+            [id]: {
+              ...expandedContent,
+              lastUpdated: Date.now(),
+            },
+          },
+        })),
+
       setArticleCount: (count) => set({ articleCount: count }),
 
       getArticlesForSection: (section) => {
         const state = get();
-        const sectionArticles = state.sectionData[section]?.articles;
-        return Array.isArray(sectionArticles) ? sectionArticles : [];
+        return state.articles[section] || [];
       },
 
       getSectionLastUpdated: (section) => {
         const state = get();
-        return state.sectionData[section]?.lastUpdated || "0";
+        return state.sectionLastUpdated[section] || 0;
       },
 
       needsUpdate: (section) => {
         const state = get();
-        const sectionData = state.sectionData[section];
-        if (!sectionData || !sectionData.articles.length) return true;
-        
-        const hourInMs = 60 * 60 * 1000;
-        const timeSinceLastUpdate = Date.now() - parseInt(sectionData.lastUpdated);
-        return timeSinceLastUpdate > hourInMs;
-      },
-
-      expandArticle: async (article: Article) => {
-        // Mark article as expanding
-        set((state) => ({
-          sectionData: {
-            ...state.sectionData,
-            [article.section]: {
-              articles: state.sectionData[article.section].articles.map((a) =>
-                a.id === article.id ? { ...a, isExpanding: true } : a
-              ),
-              lastUpdated: state.sectionData[article.section].lastUpdated,
-            },
-          },
-        }))
-
-        try {
-          const response = await fetch("/api/expand", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ headline: article.headline }),
-          })
-
-          if (!response.ok) throw new Error("Failed to expand article")
-
-          const expandedData = await response.json()
-
-          // Update article with expanded content
-          set((state) => ({
-            sectionData: {
-              ...state.sectionData,
-              [article.section]: {
-                articles: state.sectionData[article.section].articles.map((a) =>
-                  a.id === article.id
-                    ? {
-                        ...a,
-                        ...expandedData,
-                        isExpanding: false,
-                      }
-                    : a
-                ),
-                lastUpdated: state.sectionData[article.section].lastUpdated,
-              },
-            },
-          }))
-        } catch (error) {
-          console.error("Error expanding article:", error)
-          // Reset expanding state on error
-          set((state) => ({
-            sectionData: {
-              ...state.sectionData,
-              [article.section]: {
-                articles: state.sectionData[article.section].articles.map((a) =>
-                  a.id === article.id ? { ...a, isExpanding: false } : a
-                ),
-                lastUpdated: state.sectionData[article.section].lastUpdated,
-              },
-            },
-          }))
-        }
+        const lastUpdated = state.sectionLastUpdated[section] || 0;
+        return Date.now() - lastUpdated > ONE_WEEK;
       },
     }),
     {
