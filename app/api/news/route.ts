@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
-import { Perplexity } from "@/lib/perplexity";
 import { xai } from "@/lib/xai";
 import { generateObject } from "ai";
 import { NewsResponseSchema } from "@/types/news";
 import { z } from "zod";
-
-const perplexity = new Perplexity();
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
 const RequestSchema = z.object({
   type: z.enum(["breaking", "section"]),
@@ -40,10 +38,21 @@ export async function POST(req: Request) {
         ? `Generate ${count} of the most important breaking news headlines from the last 24 hours. For each headline, provide a brief 2-3 sentence summary. Format as: HEADLINE: [headline text] SUMMARY: [summary text]`
         : `Generate ${count} current news headlines for the ${section} section. For each headline, provide a brief 2-3 sentence summary. Format as: HEADLINE: [headline text] SUMMARY: [summary text]`;
 
-      // Get raw news data from Perplexity
-      const rawNews = await perplexity.completion({
-        messages: [{ role: "user", content: prompt }]
+      // Create Perplexity client
+      const perplexity = createOpenAICompatible({
+        baseURL: "https://api.perplexity.ai/",
+        headers: {
+          Authorization: `Bearer ${process.env.PERPLEXITY_API_KEY}`,
+        },
       });
+
+      // Get raw news data from Perplexity
+      const response = await perplexity.chat.completions.create({
+        model: "llama-3.1-sonar-large-128k-online",
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const rawNews = response.choices[0].message.content;
 
       // Use XAI to structure the data
       const xaiResponse = await generateObject({
